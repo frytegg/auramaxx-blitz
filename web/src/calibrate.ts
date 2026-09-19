@@ -13,6 +13,7 @@
 import { DEFAULTS, GRID_H, GRID_W, MagentaDetector, type Options } from './detect.js'
 import { linkCamera, type LinkState } from './camera-link.js'
 import { reloadOnNewBuild } from './build-watch.js'
+import { lineText } from './line.js'
 
 function $<T extends HTMLElement = HTMLElement>(id: string): T {
   const element = document.getElementById(id)
@@ -31,7 +32,23 @@ const ctx: CanvasRenderingContext2D = context
 
 const detector = new MagentaDetector()
 let lastVisible = 0
-let link: LinkState = { keyed: false, connected: false, phase: 'idle', serverCount: null, live: false }
+/** When the detector last processed a frame: a page that is not seeing anything sends nothing. */
+let lastFrameAt = 0
+const WATCHING_MS = 1_000
+let link: LinkState = {
+  keyed: false,
+  connected: false,
+  phase: 'idle',
+  serverCount: null,
+  live: false,
+  remainingMs: null,
+  threshold: null,
+  revealN: 0,
+  crossed: false,
+}
+/** ?embed=1: this page is running inside the projector, which owns the keyboard and the pointer. */
+const EMBEDDED = new URLSearchParams(location.search).get('embed') === '1'
+if (EMBEDDED) document.body.classList.add('embed')
 let devices: MediaDeviceInfo[] = []
 let deviceIndex = 0
 let stream: MediaStream | null = null
@@ -124,11 +141,30 @@ function restoreDefaults(): void {
 
 // --- the game ------------------------------------------------------------------------------------------
 
-linkCamera(detector, () => lastVisible, (state) => {
-  link = state
-  drawStatus()
-  drawLinkInfo()
-})
+linkCamera(
+  detector,
+  () => lastVisible,
+  (state) => {
+    link = state
+    drawStatus()
+    drawClock()
+    drawLinkInfo()
+  },
+  // no picture, no count: a dead camera must not own the round nor overwrite the régie's count
+  () => !videoDead && performance.now() - lastFrameAt < WATCHING_MS,
+)
+
+/** The round's clock, as the server counts it: paused on a reveal, hurried for the last ten seconds. */
+function drawClock(): void {
+  const clock = $('camClock')
+  const shown = link.remainingMs !== null && ['live', 'reveal', 'frozen', 'settling'].includes(link.phase)
+  clock.hidden = !shown
+  if (!shown || link.remainingMs === null) return
+  const seconds = Math.max(0, Math.ceil(link.remainingMs / 1000))
+  clock.textContent = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+  clock.classList.toggle('paused', link.phase === 'reveal')
+  clock.classList.toggle('hot', link.phase === 'live' && seconds <= 10)
+}
 
 function drawStatus(): void {
   const chip = $('status')
@@ -143,14 +179,17 @@ function drawStatus(): void {
   } else {
     switch (link.phase) {
       case 'live':
-      case 'reveal':
         tone = 'live'
         text = 'Counting live'
+        break
+      case 'reveal':
+        tone = 'paused'
+        text = `Reveal ${link.revealN || ''} · clock paused, bets are open`.replace('  ', ' ')
         break
       case 'frozen':
       case 'settling':
         tone = 'final'
-        text = 'Clock stopped · settling on-chain'
+        text = link.crossed ? 'Line passed · OVER wins' : 'Clock stopped · settling on-chain'
         break
       case 'resolved':
         tone = 'final'
@@ -178,7 +217,7 @@ function drawLinkInfo(): void {
         : `connected · ${link.phase}`
 }
 
-type CounterView = { n: number; mode: 'live' | 'final' | 'warmup'; label: string; sub: string | null }
+type CounterView = { n: number; mode: 'live' | 'paused' | 'final' | 'warmup'; label: string; sub: string | null }
 
 /**
  * What the big number shows. While the clock runs it is this page's own count (the one being sent).
@@ -187,6 +226,10 @@ type CounterView = { n: number; mode: 'live' | 'final' | 'warmup'; label: string
  */
 function counterView(): CounterView {
   if (link.live) return { n: detector.total, mode: 'live', label: 'Light-ups', sub: null }
+  if (link.phase === 'reveal') {
+    // the clock is paused: nothing is counted until the régie resumes it
+    return { n: link.serverCount ?? detector.total, mode: 'paused', label: 'Paused · the count resumes with the clock', sub: null }
+  }
   const after = link.phase === 'frozen' || link.phase === 'settling' || link.phase === 'resolved'
   if (after && link.serverCount !== null) {
     return {
@@ -223,12 +266,15 @@ function drawCounter(visible: number): void {
     const counter = $('counter')
     counter.classList.toggle('dim', view.mode === 'warmup')
     counter.classList.toggle('final', view.mode === 'final')
+    counter.classList.toggle('paused', view.mode === 'paused')
     shownMode = view.mode
   }
   $('counterLabel').textContent = view.label
   const sub = $('counterSub')
   if (view.sub === null) {
-    sub.innerHTML = `<b>${visible}</b> ${visible === 1 ? 'screen' : 'screens'} on camera right now`
+    // numbers only in here: nothing the room typed ever reaches this markup
+    const line = link.threshold === null || view.mode === 'warmup' ? '' : ` · line <b>${lineText(link.threshold)}</b>`
+    sub.innerHTML = `<b>${visible}</b> ${visible === 1 ? 'screen' : 'screens'} on camera${line}`
   } else sub.textContent = view.sub
 }
 
@@ -355,8 +401,16 @@ function draw(): void {
     pictureOk()
   }
 
+  // a reveal pauses the clock: the picture stays up, but nothing is counted until it resumes
+  if (link.phase === 'reveal') {
+    ctx.clearRect(0, 0, overlay.width, overlay.height)
+    drawCounter(0)
+    return
+  }
+
   const result = detector.process(video, performance.now())
   lastVisible = result.visible
+  lastFrameAt = performance.now()
 
   const dpr = window.devicePixelRatio || 1
   const w = overlay.clientWidth
@@ -495,7 +549,9 @@ window.addEventListener('mousemove', () => {
   }, 2500)
 })
 
-// the one hint the operator needs, gone before the room is looking
+// the one hint the operator needs, gone before the room is looking (and never inside the
+// projector, which has the keyboard: S and F would not reach this page there)
+if (EMBEDDED) $('toast').hidden = true
 window.setTimeout(() => $('toast').classList.add('gone'), 6000)
 window.setTimeout(() => ($('toast').hidden = true), 7000)
 

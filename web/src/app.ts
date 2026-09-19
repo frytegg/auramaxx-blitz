@@ -11,6 +11,7 @@ import { AVATAR_COUNT, avatarHtml, avatarImg, avatarIndex } from './avatars.js'
 import { encodePacked, keccak256, type Address, type Hex } from 'viem'
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 import { JOIN_URL, WS_URL, api } from './api.js'
+import { lineText } from './line.js'
 
 const $ = (id: string): HTMLElement => document.getElementById(id)!
 const STORAGE_KEY = 'auramaxx.key'
@@ -101,14 +102,15 @@ function clearLine(): void {
 function showLine(): void {
   const known = line !== null && round !== null
   $('lineBox').hidden = !known
-  $('upCond').textContent = known ? `more than ${line}` : ''
-  $('downCond').textContent = known ? `${line} or fewer` : ''
-  $('magentaLine').textContent = known ? `line ${line}` : 'Line —'
+  const shown = line === null ? '' : lineText(line)
+  $('upCond').textContent = known ? `more than ${shown}` : ''
+  $('downCond').textContent = known ? `less than ${shown}` : ''
+  $('magentaLine').textContent = known ? `line ${shown}` : 'Line —'
   if (!known) return
-  $('lineValue').textContent = String(line)
+  $('lineValue').textContent = shown
   $('lineNote').textContent = lineFixed
-    ? 'Fixed by the contract · every lit screen counts once every 4 s'
-    : 'Every lit screen counts once every 4 s for 45 s · the line grows with each new player until bets lock'
+    ? 'Fixed for this round · every lit screen counts once every 4 s · pass it and OVER wins on the spot'
+    : 'Every lit screen counts once every 4 s for 45 s · the line grows with each new player until the clock starts'
 }
 
 
@@ -214,6 +216,7 @@ function backToJoin(): void {
   $('meAvatar').replaceChildren()
   $('walletBox').style.display = 'none'
   $('finalRank').classList.remove('on')
+  $('resultNet').textContent = ''
   setTick('idle')
   setQuestion()
   setHidden(true)
@@ -333,7 +336,11 @@ function updateStatus(): void {
     $('statusText').textContent = `${sideName(selectedSide)} — pick your stake`
   } else {
     $('statusText').textContent =
-      round?.phase === 'reveal' ? 'REVEAL — 5 s to bet' : round?.phase === 'open' ? 'Pick a side' : 'Betting closed'
+      round?.phase === 'reveal'
+        ? 'REVEAL: the clock is paused. Bet again, or keep your bet'
+        : round?.phase === 'open'
+          ? 'Pick a side'
+          : 'Betting closed'
   }
 
   // each side shows what YOU have on it, so a split bet is readable at a glance
@@ -501,7 +508,8 @@ function handle(msg: Record<string, unknown>): void {
       break
     }
     case 'start': {
-      setLine(msg.threshold)
+      // the line is fixed from here: later arrivals only count from the next round
+      setLine(msg.threshold, true)
       break
     }
     case 'threshold': {
@@ -513,7 +521,11 @@ function handle(msg: Record<string, unknown>): void {
       if (round) round.phase = String(msg.phase ?? round.phase)
       const remaining = Number(msg.remainingMs ?? 0)
       const betting = msg.phase === 'open'
-      $('clock').textContent = betting ? 'BETS OPEN' : `${(remaining / 1000).toFixed(1)}s`
+      $('clock').textContent = betting
+        ? 'BETS OPEN'
+        : msg.phase === 'reveal'
+          ? `PAUSED · ${Math.ceil(remaining / 1000)}s LEFT`
+          : `${(remaining / 1000).toFixed(1)}s`
       $('clock').classList.toggle('paused', betting || msg.phase === 'reveal')
       $('magentaClock').textContent = `${Math.ceil(remaining / 1000)}s`
       if (msg.hidden === false) showMults(msg)
@@ -535,6 +547,8 @@ function handle(msg: Record<string, unknown>): void {
       showMults(msg)
       setTick('final')
       applyPhase('frozen')
+      // the room passed the line with time left: OVER is decided, and the clock stopped there
+      if (msg.reason === 'line') $('statusText').textContent = 'The room passed the line: OVER wins, settling…'
       break
     }
     case 'bet_ok': {
@@ -554,6 +568,7 @@ function handle(msg: Record<string, unknown>): void {
         BROKE: 'You have already staked everything',
         BAD_SIG: 'Signature refused',
         NOT_JOINED: 'Reconnect to rejoin',
+        NEXT_ROUND: 'You joined during this round: you play from the next one',
       }
       $('statusText').textContent = codes[String(msg.code)] ?? String(msg.code)
       setTick('idle')
@@ -569,12 +584,16 @@ function handle(msg: Record<string, unknown>): void {
       const won = onWinner > 0
       const you = msg.you as Record<string, unknown> | undefined
       // a hedged player has won something and lost something: say so rather than pick a side
-      const verdict = myStake === 0 ? '—' : !won ? 'LOST' : onLoser > 0 ? 'SPLIT' : 'WON'
+      const verdict = myStake === 0 ? 'NO BET' : !won ? 'LOST' : onLoser > 0 ? 'SPLIT' : 'WON'
       $('resultBig').textContent = verdict
       $('resultBig').style.color =
         myStake === 0 ? '#888' : verdict === 'WON' ? 'var(--up)' : verdict === 'SPLIT' ? 'var(--gold)' : 'var(--down)'
       const label = winner === 0 ? 'OVER' : 'UNDER'
-      $('resultSub').textContent = `${label} · ${String(msg.count ?? 0)} light-ups counted, line ${String(msg.threshold ?? 0)} · round ${manche}/2`
+      showNet(label, winner, onWinner, onLoser, Number(msg.poolUp ?? 0), Number(msg.poolDown ?? 0))
+      const outcome = `${label} · ${String(msg.count ?? 0)} light-ups counted, line ${lineText(Number(msg.threshold ?? 0))} · round ${manche}/2`
+      // sitting a round out is not losing it: say which of the two it was
+      const why = myStake > 0 ? '' : Number(msg.bettors ?? -1) === 0 ? 'Nobody bet this round · ' : 'You sat this round out · '
+      $('resultSub').textContent = `${why}${outcome}`
       // 'resolved' is a broadcast with no per-player field: read this phone's score off the board
       const board = msg.leaderboard as Array<Record<string, unknown>> | undefined
       const mine = board?.find((row) => String(row.address ?? '').toLowerCase() === account.address.toLowerCase())
@@ -595,9 +614,14 @@ function handle(msg: Record<string, unknown>): void {
       break
     }
     case 'payout': {
-      $('resultBig').textContent = 'PAID'
+      const sent = typeof msg.txHash === 'string'
+      $('resultNet').textContent = '' // the last round's line does not belong under the payout
+      $('resultBig').textContent = sent ? 'PAID' : 'NO PAYOUT'
       $('resultBig').style.color = 'var(--magenta)'
-      $('resultSub').textContent = `${String(msg.winners ?? 0)} winners · ${Number(msg.totalMon ?? 0).toFixed(2)} MON sent`
+      // nothing owed means nothing sent: never announce a payment that did not happen
+      $('resultSub').textContent = sent
+        ? `${String(msg.winners ?? 0)} winners · ${Number(msg.totalMon ?? 0).toFixed(2)} MON sent`
+        : 'Nobody made a profit this game, so there was no MON to send'
       $('walletBox').style.display = 'block'
       $('walletKey').textContent = privateKey
       show('vResult')
@@ -605,6 +629,40 @@ function handle(msg: Record<string, unknown>): void {
     }
     default:
       break
+  }
+}
+
+/**
+ * What the round did to this player's AURA, computed exactly as Auramaxx._payRange does: the
+ * winning leg times the pot over the winning pool, rounded down, against everything put in on both
+ * sides. The score only ever takes a net gain: a switch that lost overall leaves it where it was.
+ */
+function showNet(label: string, winner: 0 | 1, onWinner: number, onLoser: number, poolUp: number, poolDown: number): void {
+  const box = $('resultNet')
+  box.className = 'net'
+  const staked = onWinner + onLoser
+  if (staked === 0) {
+    box.textContent = ''
+    return
+  }
+  const total = poolUp + poolDown
+  const winningPool = winner === 0 ? poolUp : poolDown
+  // nobody backed the winner: the contract hands every stake back
+  const back = winningPool === 0 ? staked : Math.floor((onWinner * total) / winningPool)
+  const net = back - staked
+  box.classList.add(net > 0 ? 'gain' : net < 0 ? 'loss' : 'even')
+  if (winningPool === 0) {
+    box.textContent = `Nobody backed ${label}: your ${staked} AURA come back`
+  } else if (onLoser === 0) {
+    box.textContent = `${label} paid ${back} on your ${staked} · +${net} AURA to your score`
+  } else if (onWinner === 0) {
+    box.textContent = `−${staked} AURA`
+  } else {
+    // both sides: one leg paid, the other was lost, and only a net gain reaches the score
+    box.textContent =
+      net > 0
+        ? `${label} paid ${back} · you had ${staked} in on both sides · +${net} AURA to your score`
+        : `${label} paid ${back} · you had ${staked} in on both sides · ${net} AURA, your score stays put`
   }
 }
 
@@ -634,6 +692,12 @@ function setHidden(hidden: boolean): void {
 }
 
 function showMults(msg: Record<string, unknown>): void {
+  // an empty pot has no odds: the regularised 2.00x would be a number that means nothing
+  if (Number(msg.poolUp ?? 0) + Number(msg.poolDown ?? 0) === 0) {
+    $('upMult').textContent = 'No bets yet'
+    $('downMult').textContent = 'No bets yet'
+    return
+  }
   const up = Number(msg.mult_up_x100 ?? msg.up ?? 0)
   const down = Number(msg.mult_down_x100 ?? msg.down ?? 0)
   $('upMult').textContent = fmtMult(up)

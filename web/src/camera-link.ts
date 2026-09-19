@@ -4,7 +4,8 @@
  *   - on 'start' (the régie launches the 45 s clock) the count is reset to zero, so lights seen
  *     while the room was betting, or during the previous round, never leak into this one;
  *   - while the clock runs, the running total is pushed to the server 4 times a second. The
- *     server only accepts it with the operator key and only during the 45 s window;
+ *     server only accepts it with the operator key and only while the 45 s clock is running — a
+ *     reveal pauses it, and the count pauses with it;
  *   - it reports the round's phase and the server's own count back to the page, so the page can
  *     show the number that actually settles the round once the clock has stopped.
  *
@@ -24,8 +25,16 @@ export type LinkState = {
   phase: GamePhase
   /** the count the server holds, which is what settles the round; null before any round */
   serverCount: number | null
-  /** the 45 s window is running: this page's total is being streamed to the game */
+  /** the 45 s clock is running (not paused on a reveal): this page's total is being streamed */
   live: boolean
+  /** what is left on the round's clock, as the server counts it; null outside a round */
+  remainingMs: number | null
+  /** the line the count is measured against: projected until the lock, then the contract's */
+  threshold: number | null
+  /** which reveal the clock is paused on, 0 when it is not */
+  revealN: number
+  /** the room passed the line with time left: the clock stopped there, OVER is decided */
+  crossed: boolean
 }
 
 const PHASES: readonly GamePhase[] = ['idle', 'open', 'live', 'reveal', 'frozen', 'settling', 'resolved']
@@ -41,12 +50,32 @@ function optNum(value: unknown): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-export function linkCamera(detector: Countable, visibleNow: () => number, onChange: (state: LinkState) => void): void {
+/**
+ * `watching` says whether the detector is actually seeing frames. A page with no picture (no camera,
+ * a stalled one, the video killed) must stay silent: pushing its 0 would own the round's count,
+ * shut out a camera that works, and overwrite the count the régie types in by hand.
+ */
+export function linkCamera(
+  detector: Countable,
+  visibleNow: () => number,
+  onChange: (state: LinkState) => void,
+  watching: () => boolean,
+): void {
   const fromUrl = new URLSearchParams(location.search).get('k')
   if (fromUrl) localStorage.setItem('auramaxx.opkey', fromUrl)
   const key = fromUrl ?? localStorage.getItem('auramaxx.opkey') ?? ''
 
-  const state: LinkState = { keyed: key !== '', connected: false, phase: 'idle', serverCount: null, live: false }
+  const state: LinkState = {
+    keyed: key !== '',
+    connected: false,
+    phase: 'idle',
+    serverCount: null,
+    live: false,
+    remainingMs: null,
+    threshold: null,
+    revealN: 0,
+    crossed: false,
+  }
   let last = ''
   const emit = (): void => {
     const next = JSON.stringify(state)
@@ -64,11 +93,28 @@ export function linkCamera(detector: Countable, visibleNow: () => number, onChan
         detector.reset()
         state.phase = 'live'
         state.serverCount = 0
+        state.remainingMs = optNum(msg.durationMs) ?? state.remainingMs
+        state.threshold = optNum(msg.threshold) ?? state.threshold
+        break
+      case 'reveal':
+        // the clock is paused for the room to re-bet: counting pauses with it
+        state.phase = 'reveal'
+        state.revealN = optNum(msg.n) ?? state.revealN
+        break
+      case 'reveal_end':
+        state.phase = 'live'
+        state.revealN = 0
+        break
+      case 'threshold':
+        state.threshold = optNum(msg.threshold) ?? state.threshold
         break
       case 'snapshot': {
         const round = (msg.round ?? null) as Record<string, unknown> | null
         state.phase = round ? phaseOf(round.phase, 'idle') : 'idle'
         state.serverCount = round ? optNum(round.count) : null
+        state.remainingMs = round ? optNum(round.remainingMs) : null
+        state.threshold = round ? optNum(round.threshold) : null
+        state.revealN = round && state.phase === 'reveal' ? (optNum(round.revealsDone) ?? 0) : 0
         // this page was reloaded (or reconnected) mid-round: carry on from the count the server
         // already holds, or the next push would send the room's lights back to zero
         if ((state.phase === 'live' || state.phase === 'reveal') && state.serverCount !== null && state.serverCount > detector.total) {
@@ -79,26 +125,39 @@ export function linkCamera(detector: Countable, visibleNow: () => number, onChan
       case 'tick':
         state.phase = phaseOf(msg.phase, state.phase)
         state.serverCount = optNum(msg.count) ?? state.serverCount
+        state.remainingMs = optNum(msg.remainingMs) ?? state.remainingMs
+        state.threshold = optNum(msg.threshold) ?? state.threshold
+        if (state.phase !== 'reveal') state.revealN = 0
         break
       case 'freeze':
         state.phase = 'frozen'
+        state.crossed = msg.reason === 'line'
+        state.serverCount = optNum(msg.count) ?? state.serverCount
         break
       case 'resolved':
         state.phase = 'resolved'
         state.serverCount = optNum(msg.count) ?? state.serverCount
+        state.threshold = optNum(msg.threshold) ?? state.threshold
         break
       case 'open':
         state.phase = 'open'
+        state.crossed = false
         state.serverCount = null
+        state.remainingMs = optNum(msg.durationMs)
+        state.threshold = null
+        state.revealN = 0
         break
       case 'game':
         state.phase = 'idle'
         state.serverCount = null
+        state.remainingMs = null
+        state.threshold = null
+        state.revealN = 0
         break
       default:
         return
     }
-    state.live = state.phase === 'live' || state.phase === 'reveal'
+    state.live = state.phase === 'live'
     emit()
   }
 
@@ -130,7 +189,7 @@ export function linkCamera(detector: Countable, visibleNow: () => number, onChan
   }
 
   setInterval(() => {
-    if (!state.keyed || !state.live || socket?.readyState !== WebSocket.OPEN) return
+    if (!state.keyed || !state.live || !watching() || socket?.readyState !== WebSocket.OPEN) return
     socket.send(JSON.stringify({ type: 'camera', key, total: detector.total, visible: visibleNow() }))
   }, SEND_EVERY_MS)
 
