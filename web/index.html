@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#07070d" />
+    <title>AURAMAXX</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Space+Grotesk:wght@400;500;600;700&display=swap" />
+    <style>
+      /* design: frontend/assets/style.css (Aura Max mockups) — magenta palette, Anton + Space Grotesk */
+      :root {
+        color-scheme: dark;
+        --magenta: #FF2E9E; --magenta-soft: #FF8FD4; --up: #35E28C; --down: #FF4D6A;
+        --bg: #0B0710; --surface: #17101D; --surface-2: #20142A; --border: #2C1E34; --card: var(--surface);
+        --text: #F8F3F7; --text-dim: #AE9AB2; --text-faint: #7A6A7E; --gold: #FFD166;
+      }
+      * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+      body {
+        background: radial-gradient(120% 60% at 50% -10%, #2B0F52 0%, var(--bg) 60%) fixed, var(--bg);
+        color: var(--text); min-height: 100dvh; overscroll-behavior: none;
+        font-family: 'Space Grotesk', system-ui, sans-serif; user-select: none;
+        padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+      }
+      .view { display: none; padding: 22px 20px; min-height: 100dvh; flex-direction: column; gap: 16px; max-width: 480px; margin: 0 auto; }
+      .view.on { display: flex; }
+
+      .brand { font-family: 'Anton', sans-serif; font-size: 34px; letter-spacing: 3px; color: var(--magenta); text-align: center; text-shadow: 0 0 24px rgba(255,46,158,.45); }
+      .tagline { text-align: center; color: var(--text-dim); font-size: 15px; line-height: 1.5; }
+
+      /* the picture avatars: round faces, the chosen one ringed in magenta */
+      .avatars { display: grid; grid-template-columns: repeat(var(--cols, 3), 1fr); gap: 14px; padding: 4px 6px; }
+      .avatar {
+        aspect-ratio: 1; width: 100%; padding: 4px; border-radius: 50%; background: var(--surface);
+        border: 3px solid var(--border); box-shadow: none; cursor: pointer; transition: border-color .15s ease, box-shadow .15s ease, transform .1s ease;
+      }
+      .avatar.sel { border-color: var(--magenta); background: var(--surface); box-shadow: 0 0 22px rgba(255,46,158,.45); }
+      #meAvatar { display: inline-block; width: 22px; height: 22px; vertical-align: -6px; margin-right: 4px; }
+      .board .av { display: inline-block; width: 24px; height: 24px; vertical-align: -7px; margin: 0 4px; }
+
+      input {
+        width: 100%; padding: 16px; border-radius: 16px; border: 1px solid var(--border);
+        background: var(--surface); color: var(--text); font: 600 20px 'Space Grotesk', sans-serif; text-align: center;
+      }
+      input::placeholder { color: var(--text-faint); }
+      button {
+        border: none; border-radius: 16px; font: inherit; cursor: pointer; color: #170013;
+        background: var(--magenta); padding: 18px; font-size: 18px; font-weight: 700; width: 100%;
+        box-shadow: 0 0 30px rgba(255,46,158,.35); transition: transform .1s ease;
+      }
+      button:active { transform: scale(.98); }
+      button:disabled { opacity: .3; box-shadow: none; }
+
+      .top { display: flex; justify-content: space-between; align-items: center; font-size: 14px; }
+      .chip { background: var(--surface); border: 1px solid var(--border); padding: 7px 14px; border-radius: 999px; color: var(--text-dim); }
+      .aura { color: var(--magenta); font-weight: 700; font-variant-numeric: tabular-nums; }
+
+      .question { font-family: 'Anton', sans-serif; font-size: 30px; letter-spacing: .02em; line-height: 1.15; text-align: center; }
+      .clock { font-family: 'Anton', sans-serif; font-size: 64px; text-align: center; font-variant-numeric: tabular-nums; }
+      .clock.paused { color: var(--magenta); font-size: 34px; }
+
+      .sides { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      .side {
+        padding: 22px 12px; border-radius: 18px; background: transparent; border: 2px solid var(--border);
+        text-align: center; cursor: pointer; transition: all .15s ease;
+      }
+      .side .name { font-family: 'Anton', sans-serif; font-size: 30px; letter-spacing: .06em; }
+      .side .mult { font-size: 14px; color: var(--text-dim); margin-top: 4px; font-variant-numeric: tabular-nums; }
+      .side .cond { font-size: 15px; font-weight: 700; color: var(--text); margin-top: 2px; min-height: 19px; font-variant-numeric: tabular-nums; }
+      .line { text-align: center; padding: 12px 14px; border-radius: 16px; background: var(--surface); border: 1px solid var(--border); }
+      .line[hidden] { display: none; }
+      .line .lineTop { font-family: 'Anton', sans-serif; font-size: 24px; letter-spacing: .06em; color: var(--text-dim); }
+      .line .lineTop b { font-weight: 400; font-size: 40px; color: var(--magenta); vertical-align: -4px; margin: 0 6px; font-variant-numeric: tabular-nums; }
+      .line .lineNote { font-size: 13px; color: var(--text-faint); margin-top: 4px; line-height: 1.4; }
+      .side.up .name { color: var(--up); }
+      .side.down .name { color: var(--down); }
+      .side.up.sel { border-color: var(--up); background: rgba(53,226,140,.12); box-shadow: 0 0 30px rgba(53,226,140,.35); }
+      .side.down.sel { border-color: var(--down); background: rgba(255,77,106,.12); box-shadow: 0 0 30px rgba(255,77,106,.35); }
+      .side.mine { border-color: var(--magenta); }
+      .side .mine { font-size: 13px; font-weight: 700; color: var(--magenta); margin-top: 6px; min-height: 17px; }
+
+      /* stake buttons styled as the casino chips from chip-mise.js */
+      .stakes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; justify-items: center; }
+      .stakes button {
+        width: 64px; height: 64px; padding: 0; border-radius: 50%; font-size: 15px; font-weight: 700;
+        color: #170013; border: 4px dashed rgba(255,255,255,.55); box-shadow: 0 4px 0 rgba(0,0,0,.35);
+      }
+      .stakes button:nth-child(1) { background: #FF8FD4; }
+      .stakes button:nth-child(2) { background: #B34DFF; color: #fff; }
+      .stakes button:nth-child(3) { background: #FF2E9E; }
+      .stakes button:nth-child(4), .stakes button.go { background: var(--gold); }
+      .pending { display: none; flex-direction: column; gap: 10px; background: var(--surface); border: 1px dashed var(--magenta); border-radius: 16px; padding: 12px; }
+      .pending.on { display: flex; }
+      .pendingText { text-align: center; font-size: 15px; color: var(--text-dim); }
+      .pendingText b { color: var(--text); font-family: 'Anton', sans-serif; font-weight: 400; font-size: 20px; letter-spacing: .03em; }
+      .pendingBtns { display: grid; grid-template-columns: 1fr 2fr; gap: 10px; }
+      .pendingBtns .undo { background: transparent; color: var(--text); border: 2px solid var(--border); box-shadow: none; padding: 14px; font-size: 16px; }
+      .pendingBtns .confirm { padding: 14px; font-size: 16px; }
+
+      .status { text-align: center; font-size: 15px; min-height: 22px; color: var(--text-dim); }
+      .tick { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; background: var(--text-faint); }
+      .tick.seen { background: var(--magenta-soft); }
+      .tick.final { background: var(--up); }
+
+      /* the magenta action screen — pure #FF00E5 kept on purpose: it is what the camera detects */
+      #magenta { background: #FF00E5; justify-content: center; align-items: center; gap: 28px; max-width: none; }
+      #magenta .hint { color: #2a0024; font-family: 'Anton', sans-serif; font-size: 30px; letter-spacing: .04em; text-align: center; line-height: 1.3; }
+      #magenta .count { color: #2a0024; font-family: 'Anton', sans-serif; font-size: 96px; }
+
+      .result { text-align: center; }
+      .result .big { font-family: 'Anton', sans-serif; font-size: 76px; letter-spacing: .03em; }
+      .result .sub { font-size: 16px; color: var(--text-dim); margin-top: 8px; }
+      .board { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 10px 16px; }
+      .board .row { display: flex; justify-content: space-between; padding: 8px 0; font-size: 16px; border-bottom: 1px solid var(--border); }
+      .board .row:last-child { border-bottom: none; }
+      .finalRank { margin-top: 18px; display: none; flex-direction: column; align-items: center; gap: 8px; }
+      .finalRank.on { display: flex; }
+      .finalRank .face { width: 72px; height: 72px; border-radius: 50%; overflow: hidden; border: 3px solid var(--gold); }
+      .finalRank .rk { font-family: 'Anton', sans-serif; font-size: 44px; color: var(--gold); letter-spacing: .03em; }
+      .finalRank .of { font-size: 15px; color: var(--text-dim); }
+      .key { word-break: break-all; font-size: 12px; background: var(--surface); border: 1px solid var(--border); padding: 12px; border-radius: 12px; color: var(--text-dim); font-family: ui-monospace, monospace; }
+      .warn { font-size: 13px; color: var(--text-faint); line-height: 1.5; text-align: center; }
+      .spacer { flex: 1; }
+    </style>
+  </head>
+  <body>
+    <!-- join -->
+    <section class="view on" id="vJoin">
+      <div class="spacer"></div>
+      <div class="brand">AURAMAXX</div>
+      <div class="tagline">Pick an avatar and a name.<br />You get 1000 AURA, free.</div>
+      <div class="avatars" id="avatars"></div>
+      <input id="name" placeholder="Your name" maxlength="12" autocomplete="off" />
+      <button id="go">ENTER</button>
+      <div class="warn">Nothing to install, no wallet to create. AURA has no value.</div>
+      <div class="spacer"></div>
+    </section>
+
+    <!-- game -->
+    <section class="view" id="vGame">
+      <div class="top">
+        <div class="chip"><span id="meAvatar"></span> <span id="meName">—</span></div>
+        <div class="chip"><span class="aura" id="meAura">1000</span> AURA</div>
+      </div>
+      <div class="question" id="q">Waiting for the round…</div>
+      <!-- the number OVER and UNDER are about: without it the two buttons mean nothing -->
+      <div class="line" id="lineBox" hidden>
+        <div class="lineTop">LINE <b id="lineValue">—</b> LIGHT-UPS</div>
+        <div class="lineNote" id="lineNote"></div>
+      </div>
+      <div class="clock" id="clock">—</div>
+      <div class="sides">
+        <div class="side up" id="sideUp"><div class="name" id="upName">OVER</div><div class="cond" id="upCond"></div><div class="mult" id="upMult">—</div><div class="mine" id="upMine"></div></div>
+        <div class="side down" id="sideDown"><div class="name" id="downName">UNDER</div><div class="cond" id="downCond"></div><div class="mult" id="downMult">—</div><div class="mine" id="downMine"></div></div>
+      </div>
+      <div class="stakes">
+        <button data-stake="100">100</button>
+        <button data-stake="250">250</button>
+        <button data-stake="500">500</button>
+        <button data-stake="all" class="go">ALL IN</button>
+      </div>
+      <!-- chips pile up here first: nothing is sent, and nothing leaves the wallet, until CONFIRM -->
+      <div class="pending" id="pending">
+        <div class="pendingText" id="pendingText"></div>
+        <div class="pendingBtns">
+          <button type="button" class="undo" id="undoBtn">UNDO</button>
+          <button type="button" class="confirm" id="confirmBtn">CONFIRM</button>
+        </div>
+      </div>
+      <div class="status" id="status"><span class="tick" id="tick"></span><span id="statusText">Pick a side</span></div>
+      <div class="spacer"></div>
+    </section>
+
+    <!-- magenta action -->
+    <section class="view" id="magenta">
+      <div class="hint" id="magentaClock" style="font-size:44px">45s</div>
+      <div class="hint" id="magentaHint">SHOW YOUR SCREEN<br />TO THE CAMERA</div>
+      <div class="count" id="magentaCount">—</div>
+      <div class="hint" id="magentaLine" style="font-size:20px">Line —</div>
+      <div class="hint" style="font-size:15px">Brightness all the way up</div>
+    </section>
+
+    <!-- result -->
+    <section class="view" id="vResult">
+      <div class="spacer"></div>
+      <div class="result">
+        <div class="big" id="resultBig">—</div>
+        <div class="sub" id="resultSub"></div>
+        <div class="finalRank" id="finalRank"></div>
+      </div>
+      <div class="board" id="resultBoard"></div>
+      <div id="walletBox" style="display:none">
+        <div class="warn">This wallet and its MON are yours. Private key (testnet, no real value):</div>
+        <div class="key" id="walletKey"></div>
+        <button id="copyKey" style="margin-top:10px">COPY THE KEY</button>
+      </div>
+      <div class="spacer"></div>
+    </section>
+
+    <script type="module" src="/src/app.ts"></script>
+  </body>
+</html>

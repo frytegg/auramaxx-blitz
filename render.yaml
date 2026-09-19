@@ -1,0 +1,32 @@
+# Render blueprint — Monad Blitz rule 02: the submission must be a live public deployment,
+# locally-hosted projects are disqualified.
+services:
+  - type: web
+    name: auramaxx
+    runtime: node
+    plan: free
+    region: frankfurt
+    # NOT corepack: the version bundled with Node ships a stale npm signing-key list and fails
+    # with "Cannot find matching keyid". Installing pnpm straight from the registry avoids it.
+    buildCommand: npm i -g pnpm@10.19.0 && pnpm -C web install --no-frozen-lockfile && pnpm -C web build && pnpm -C server install --no-frozen-lockfile && pnpm -C server build
+    startCommand: node server/dist/server.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "22.12.0"
+      # belt and braces if anything still reaches for corepack
+      - key: COREPACK_INTEGRITY_KEYS
+        value: "0"
+      - key: CHAIN_ID
+        value: "10143"
+      - key: RPC_URL
+        value: https://testnet-rpc.monad.xyz
+      - key: RPC_URL_FALLBACK
+        value: https://rpc.ankr.com/monad_testnet
+      - key: CONTRACT_ADDRESS
+        value: "0x0079c8A953C571f481D88195dBacC63dFE462910"
+      # set these two by hand in the dashboard: they are secrets and never live in the repo
+      - key: RELAYER_PRIVATE_KEY
+        sync: false
+      - key: OP_KEY
+        sync: false

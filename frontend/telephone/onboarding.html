@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aura Max — Bienvenue</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Space+Grotesk:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<div class="screen-phone">
+  <div style="padding: 28px 28px 0;">
+    <span class="wordmark" style="font-size: 22px;">AURA</span>
+  </div>
+  <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 28px; padding: 32px;">
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <span style="font-size: 13px; letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim);">Salle connectée</span>
+      <h1 class="font-display" style="margin: 0; font-size: 46px; line-height: 1;">Bienvenue</h1>
+      <p style="margin: 0; color: var(--text-dim); font-size: 16px; line-height: 1.5;">Choisis ton avatar et ton pseudo pour rejoindre la partie.</p>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <span style="font-size: 13px; color: var(--text-dim);">Ton avatar</span>
+      <div id="avatar-picker" style="display: flex; gap: 10px;"></div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+      <label for="pseudo" style="font-size: 13px; color: var(--text-dim);">Pseudo</label>
+      <input id="pseudo" name="pseudo" type="text" placeholder="Ton pseudo" style="background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; color: var(--text); font-size: 17px; font-family: 'Space Grotesk', sans-serif;">
+    </div>
+    <div style="display: flex; align-items: center; gap: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 18px 20px;">
+      <svg width="36" height="36" viewBox="0 0 36 36" aria-hidden="true">
+        <circle cx="18" cy="18" r="16" fill="none" stroke="#FF2E9E" stroke-width="2.5"></circle>
+        <circle cx="18" cy="18" r="9" fill="none" stroke="#FF2E9E" stroke-width="1.5" opacity="0.6"></circle>
+      </svg>
+      <strong style="font-size: 16px;">1000 $AURA offerts</strong>
+    </div>
+  </div>
+  <div style="padding: 24px 28px 36px;">
+    <a href="warmup.html" class="btn-cta" id="join-cta">Rejoindre la partie</a>
+  </div>
+</div>
+
+<script type="module">
+  import { avatarSvg, AVATAR_COUNT } from '../assets/avatars.js';
+
+  // The same six avatars are reused on the end-of-game podium
+  // (projo/classement.html) — whatever index the player picks here should
+  // be stored on their player record and carried through to the end.
+  let selected = 0;
+  const picker = document.getElementById('avatar-picker');
+
+  function buttonStyle(isSelected) {
+    return 'width:44px;height:44px;padding:0;border-radius:50%;box-sizing:border-box;cursor:pointer;display:flex;align-items:center;justify-content:center;background:transparent;border:3px solid ' +
+      (isSelected ? '#F8F3F7;box-shadow:0 0 0 3px rgba(255,46,158,0.4);' : 'transparent;opacity:0.75;');
+  }
+
+  function render() {
+    picker.innerHTML = Array.from({ length: AVATAR_COUNT }, (_, i) => `
+      <button type="button" data-avatar="${i}" aria-pressed="${i === selected}" aria-label="Avatar ${i + 1}" style="${buttonStyle(i === selected)}">
+        ${avatarSvg(i, 40)}
+      </button>`).join('');
+    picker.querySelectorAll('[data-avatar]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        selected = Number(btn.dataset.avatar);
+        render();
+      });
+    });
+  }
+  render();
+
+  // Carry the chosen avatar + pseudo forward — swap sessionStorage for your
+  // real session/auth layer once the backend exists.
+  document.getElementById('join-cta').addEventListener('click', () => {
+    try {
+      sessionStorage.setItem('auraMax.avatar', String(selected));
+      sessionStorage.setItem('auraMax.pseudo', document.getElementById('pseudo').value || 'Joueur');
+    } catch (e) { /* storage unavailable — non-blocking */ }
+  });
+</script>
+</body>
+</html>
